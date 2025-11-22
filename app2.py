@@ -406,7 +406,8 @@ for email, info in merged.items():
         # ----------------------------------------
         if ex_idx:
             r = ex_idx
-            queue(ws_ex, r, ex_hmap["Comments"], comments)
+            if comments.strip():
+                queue(ws_ex, r, ex_hmap["Comments"], comments)
             if "Email-Count" in ex_hmap:
                 queue(ws_ex, r, ex_hmap["Email-Count"], email_count)
             if "Linkedin Msg" in ex_hmap:
@@ -422,7 +423,8 @@ for email, info in merged.items():
         # ----------------------------------------
         if sp_idx:
             r = sp_idx
-            queue(ws_sp, r, sp_hmap["Comments"], comments)
+            if comments.strip():
+                queue(ws_sp, r, sp_hmap["Comments"], comments)
             if "Email-Count" in sp_hmap:
                 queue(ws_sp, r, sp_hmap["Email-Count"], email_count)
             if "Linkedin Msg Count" in sp_hmap:
