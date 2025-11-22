@@ -8,14 +8,25 @@ from collections import defaultdict
 import os
 from dateutil.parser import parse
 
+from datetime import datetime
+
 def parse_date_safe(value):
     if not value or not str(value).strip():
         return None
+
     try:
-        return parse(str(value).strip(), dayfirst=True)
+        dt = parse(str(value).strip(), dayfirst=True)
+
+        # Option C: If the parsed year is in the past,
+        # assume the user meant NEXT YEAR.
+        today = datetime.today()
+
+        if dt.date() < today.date():  
+            dt = dt.replace(year=dt.year + 1)
+
+        return dt
     except:
         return None
-
 
 # =========================
 # CRM CLIENT CLASS
