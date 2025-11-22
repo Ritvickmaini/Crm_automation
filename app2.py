@@ -7,26 +7,26 @@ import json
 from collections import defaultdict
 import os
 from dateutil.parser import parse
-
 from datetime import datetime
 
-def parse_date_safe(value):
+def parse_sheet_date(value):
+    """
+    Convert any Google Sheet date into a clean Python datetime.
+    No auto-year fixing.
+    """
     if not value or not str(value).strip():
         return None
-
     try:
-        dt = parse(str(value).strip(), dayfirst=True)
-
-        # Option C: If the parsed year is in the past,
-        # assume the user meant NEXT YEAR.
-        today = datetime.today()
-
-        if dt.date() < today.date():  
-            dt = dt.replace(year=dt.year + 1)
-
-        return dt
+        return parse(str(value).strip(), dayfirst=True)
     except:
         return None
+
+
+def to_crm_date(dt):
+    """Convert python datetime → CRM format YYYY-MM-DD"""
+    if not dt:
+        return ""
+    return dt.strftime("%Y-%m-%d")
 
 # =========================
 # CRM CLIENT CLASS
@@ -354,8 +354,8 @@ for email, info in merged.items():
         sheet_date_raw = (src.get("Next Followup") or "").strip()
         crm_date_raw = (crm_data.get("cf_905") or "").strip()
 
-        sheet_date = parse_date_safe(sheet_date_raw)
-        crm_date = parse_date_safe(crm_date_raw)
+        sheet_date = parse_sheet_date(sheet_date_raw)
+        crm_date = parse_sheet_date(crm_date_raw)
 
         # CASE 1: CRM missing date → update CRM from sheet
         if crm_date is None and sheet_date is not None:
@@ -364,14 +364,8 @@ for email, info in merged.items():
 
             full_payload = crm_data.copy()
             full_payload["id"] = crm_id
+            full_payload["cf_905"] = to_crm_date(sheet_date)
             
-            if sheet_date:
-                crm_format_date = sheet_date.strftime("%Y-%m-%d")
-            else:
-                crm_format_date = ""
-            full_payload["cf_905"] = crm_format_date
-            
-
             for key in ["modifiedtime", "createdtime"]:
                 full_payload.pop(key, None)
 
@@ -392,12 +386,7 @@ for email, info in merged.items():
 
             full_payload = crm_data.copy()
             full_payload["id"] = crm_id
-            if sheet_date:
-                crm_format_date = sheet_date.strftime("%Y-%m-%d")
-            else:
-                crm_format_date = ""
-            full_payload["cf_905"] = crm_format_date
-            
+            full_payload["cf_905"] = to_crm_date(sheet_date)
 
             for key in ["modifiedtime", "createdtime"]:
                 full_payload.pop(key, None)
