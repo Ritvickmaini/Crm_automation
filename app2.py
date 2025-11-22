@@ -120,6 +120,7 @@ scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/au
 creds = ServiceAccountCredentials.from_json_keyfile_name(SERVICE_ACCOUNT_FILE, scope)
 client = gspread.authorize(creds)
 crm = CRMClient(BASE_URL, USERNAME, ACCESS_KEY)
+print("📄 Google Sheets authenticated", flush=True)
 
 
 # =========================
@@ -307,9 +308,11 @@ for email, info in merged.items():
         # -------------------------------
         # CREATE NEW LEAD IF MISSING
         # -------------------------------
+        print(f"➕ Creating new CRM lead for {email}", flush=True)
         if not crm_id:
             created = crm.create_lead(payload)
             crm_id = created["id"]
+            print(f"✅ Lead created with ID {crm_id}", flush=True)
 
             if ex_idx:
                 queue(ws_ex, ex_idx, ex_crm_col, crm_id)
@@ -337,6 +340,7 @@ for email, info in merged.items():
 
         if sheet_reply and sheet_reply != crm_reply:
             try:
+                print(f"🔄 Updating Reply Status for {email}: {sheet_reply}", flush=True)
                 session = crm.get_session()
                 full_payload = crm_data.copy()
                 full_payload["id"] = crm_id
@@ -355,12 +359,12 @@ for email, info in merged.items():
                 ).json()
 
                 if update_res.get("success"):
-                    print(f"✅ Reply Status updated for {email}: {sheet_reply}")
+                    print(f"✅ Reply Status updated for {email}: {sheet_reply}",flush=True)
                 else:
-                    print(f"❌ Failed to update Reply Status for {email}: {update_res}")
+                    print(f"❌ Failed to update Reply Status for {email}: {update_res}",flush=True)
 
             except Exception as e:
-                print(f"❌ Error syncing Reply Status for {email}: {e}")
+                print(f"❌ Error syncing Reply Status for {email}: {e}",flush=True)
 
         # ----------------------------------------
         # SYNC PITCH DECK URL (Sheet → CRM)
@@ -370,6 +374,7 @@ for email, info in merged.items():
 
         if sheet_pitch and sheet_pitch != crm_pitch:
             try:
+                print(f"🔄 Updating Pitch Deck URL for {email}: {sheet_pitch}", flush=True)
                 session = crm.get_session()
 
                 full_payload = crm_data.copy()
@@ -389,12 +394,12 @@ for email, info in merged.items():
                 ).json()
 
                 if update_res.get("success"):
-                    print(f"✅ Pitch Deck URL updated for {email}: {sheet_pitch}")
+                    print(f"✅ Pitch Deck URL updated for {email}: {sheet_pitch}",flush=True)
                 else:
-                    print(f"❌ Failed to update Pitch Deck URL for {email}: {update_res}")
+                    print(f"❌ Failed to update Pitch Deck URL for {email}: {update_res}",flush=True)
 
             except Exception as e:
-                print(f"❌ Error syncing Pitch Deck URL for {email}: {e}")
+                print(f"❌ Error syncing Pitch Deck URL for {email}: {e}",flush=True)
 
         # ----------------------------------------
         # UPDATE EXHIBITOR SHEET
@@ -429,7 +434,7 @@ for email, info in merged.items():
             queue(ws_sp, r, sp_crm_col, crm_id)
 
     except Exception as e:
-        print("❌ ERROR for", email, ":", e)
+        print("❌ ERROR for", email, ":", e, flush=True)
 
 # =========================
 # EXECUTE BATCH UPDATES
@@ -437,6 +442,7 @@ for email, info in merged.items():
 for ws, batch in updates.items():
     if batch:
         ws.batch_update(batch)
-        print(f"Updated {len(batch)} cells in {ws.title}")
+        print(f"Updated {len(batch)} cells in {ws.title}",flush=True)
 
-print("SYNC COMPLETE (Leads Created + CRM Updated + Reply Status Sync + Pitch Deck URL Sync....)")
+print("SYNC COMPLETE....", flush=True)
+
