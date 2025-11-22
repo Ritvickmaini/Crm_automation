@@ -353,7 +353,13 @@ for email, info in merged.items():
 
             full_payload = crm_data.copy()
             full_payload["id"] = crm_id
-            full_payload["cf_905"] = sheet_date_raw
+            
+            if sheet_date:
+                crm_format_date = sheet_date.strftime("%Y-%m-%d")
+            else:
+                crm_format_date = ""
+            full_payload["cf_905"] = crm_format_date
+            
 
             for key in ["modifiedtime", "createdtime"]:
                 full_payload.pop(key, None)
@@ -363,6 +369,7 @@ for email, info in merged.items():
                 data={
                     "operation": "update",
                     "sessionName": session,
+                    "elementType": "Leads",
                     "element": json.dumps(full_payload)
                 }
             )
@@ -374,7 +381,12 @@ for email, info in merged.items():
 
             full_payload = crm_data.copy()
             full_payload["id"] = crm_id
-            full_payload["cf_905"] = sheet_date_raw
+            if sheet_date:
+                crm_format_date = sheet_date.strftime("%Y-%m-%d")
+            else:
+                crm_format_date = ""
+            full_payload["cf_905"] = crm_format_date
+            
 
             for key in ["modifiedtime", "createdtime"]:
                 full_payload.pop(key, None)
@@ -384,6 +396,7 @@ for email, info in merged.items():
                 data={
                     "operation": "update",
                     "sessionName": session,
+                    "elementType": "Leads",
                     "element": json.dumps(full_payload)
                 }
             )
