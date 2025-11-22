@@ -6,6 +6,16 @@ from oauth2client.service_account import ServiceAccountCredentials
 import json
 from collections import defaultdict
 import os
+from dateutil.parser import parse
+
+def parse_date_safe(value):
+    if not value or not str(value).strip():
+        return None
+    try:
+        return parse(str(value).strip(), dayfirst=True)
+    except:
+        return None
+
 
 # =========================
 # CRM CLIENT CLASS
@@ -108,7 +118,7 @@ BASE_URL = "https://b2bgrowthexpo.crm360degree.com"
 USERNAME = "ritvick"
 ACCESS_KEY = "Sp4y3qQV1ZuanCet"
 
-SHEET_NAME = "Expo-Sales-Management"
+SHEET_NAME = "replica"
 EXHIBITOR_TAB = "exhibitors-1"
 SPEAKER_TAB = "speakers-2"
 
@@ -327,6 +337,69 @@ for email, info in merged.items():
         crm_data = crm.get_lead(crm_id)
         comments = crm.get_all_comments(crm_id)
 
+        # ----------------------------------------
+        # TWO-WAY SYNC FOR NEXT FOLLOWUP DATE (cf_905)
+        # ----------------------------------------
+        sheet_date_raw = (src.get("Next Followup") or "").strip()
+        crm_date_raw = (crm_data.get("cf_905") or "").strip()
+
+        sheet_date = parse_date_safe(sheet_date_raw)
+        crm_date = parse_date_safe(crm_date_raw)
+
+        # CASE 1: CRM missing date → update CRM from sheet
+        if crm_date is None and sheet_date is not None:
+            print(f"🟦 Updating CRM Next Followup for {email} → {sheet_date_raw}")
+            session = crm.get_session()
+
+            full_payload = crm_data.copy()
+            full_payload["id"] = crm_id
+            full_payload["cf_905"] = sheet_date_raw
+
+            for key in ["modifiedtime", "createdtime"]:
+                full_payload.pop(key, None)
+
+            requests.post(
+                crm.base_url,
+                data={
+                    "operation": "update",
+                    "sessionName": session,
+                    "element": json.dumps(full_payload)
+                }
+            )
+
+        # CASE 2: CRM date older → update CRM
+        elif crm_date and sheet_date and crm_date < sheet_date:
+            print(f"⬆️ CRM date older, updating CRM for {email} → {sheet_date_raw}")
+            session = crm.get_session()
+
+            full_payload = crm_data.copy()
+            full_payload["id"] = crm_id
+            full_payload["cf_905"] = sheet_date_raw
+
+            for key in ["modifiedtime", "createdtime"]:
+                full_payload.pop(key, None)
+
+            requests.post(
+                crm.base_url,
+                data={
+                    "operation": "update",
+                    "sessionName": session,
+                    "element": json.dumps(full_payload)
+                }
+            )
+
+        # CASE 3: CRM date newer → update sheet
+        elif crm_date and sheet_date and crm_date > sheet_date:
+            print(f"⬇️ CRM has newer date, updating Sheet for {email} → {crm_date_raw}")
+
+            if ex_idx:
+                queue(ws_ex, ex_idx, ex_hmap["Next Followup"], crm_date_raw)
+            if sp_idx:
+                queue(ws_sp, sp_idx, sp_hmap["Next Followup"], crm_date_raw)
+
+        # ----------------------------------------
+        # CRM → SHEET (email, linkedin, whatsapp, call)
+        # ----------------------------------------
         email_count = crm_data.get("cf_1207", "")
         linkedin_val = crm_data.get("cf_1159", "")
         whatsapp_val = crm_data.get("cf_1157", "")
@@ -342,6 +415,7 @@ for email, info in merged.items():
             try:
                 print(f"🔄 Updating Reply Status for {email}: {sheet_reply}", flush=True)
                 session = crm.get_session()
+
                 full_payload = crm_data.copy()
                 full_payload["id"] = crm_id
                 full_payload["cf_1173"] = sheet_reply
@@ -359,12 +433,12 @@ for email, info in merged.items():
                 ).json()
 
                 if update_res.get("success"):
-                    print(f"✅ Reply Status updated for {email}: {sheet_reply}",flush=True)
+                    print(f"✅ Reply Status updated for {email}: {sheet_reply}", flush=True)
                 else:
-                    print(f"❌ Failed to update Reply Status for {email}: {update_res}",flush=True)
+                    print(f"❌ Failed to update Reply Status for {email}: {update_res}", flush=True)
 
             except Exception as e:
-                print(f"❌ Error syncing Reply Status for {email}: {e}",flush=True)
+                print(f"❌ Error syncing Reply Status for {email}: {e}", flush=True)
 
         # ----------------------------------------
         # SYNC PITCH DECK URL (Sheet → CRM)
@@ -394,12 +468,12 @@ for email, info in merged.items():
                 ).json()
 
                 if update_res.get("success"):
-                    print(f"✅ Pitch Deck URL updated for {email}: {sheet_pitch}",flush=True)
+                    print(f"✅ Pitch Deck URL updated for {email}: {sheet_pitch}", flush=True)
                 else:
-                    print(f"❌ Failed to update Pitch Deck URL for {email}: {update_res}",flush=True)
+                    print(f"❌ Failed to update Pitch Deck URL for {email}: {update_res}", flush=True)
 
             except Exception as e:
-                print(f"❌ Error syncing Pitch Deck URL for {email}: {e}",flush=True)
+                print(f"❌ Error syncing Pitch Deck URL for {email}: {e}", flush=True)
 
         # ----------------------------------------
         # UPDATE EXHIBITOR SHEET
