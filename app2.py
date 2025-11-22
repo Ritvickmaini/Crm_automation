@@ -118,7 +118,7 @@ BASE_URL = "https://b2bgrowthexpo.crm360degree.com"
 USERNAME = "ritvick"
 ACCESS_KEY = "Sp4y3qQV1ZuanCet"
 
-SHEET_NAME = "replica"
+SHEET_NAME = "Expo-Sales-Management"
 EXHIBITOR_TAB = "exhibitors-1"
 SPEAKER_TAB = "speakers-2"
 
