@@ -5,6 +5,7 @@ import gspread
 from oauth2client.service_account import ServiceAccountCredentials
 import json
 from collections import defaultdict
+import os
 
 # =========================
 # CRM CLIENT CLASS
@@ -114,8 +115,9 @@ SPEAKER_TAB = "speakers-2"
 CRM_ID_COL_NAME = "CRM Lead ID"
 CRM_UPDATE_COL = "CRM Update"
 
+SERVICE_ACCOUNT_FILE = "/etc/secrets/service_account.json"
 scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
-creds = ServiceAccountCredentials.from_json_keyfile_name("service_account.json", scope)
+creds = ServiceAccountCredentials.from_json_keyfile_name(SERVICE_ACCOUNT_FILE, scope)
 client = gspread.authorize(creds)
 crm = CRMClient(BASE_URL, USERNAME, ACCESS_KEY)
 
