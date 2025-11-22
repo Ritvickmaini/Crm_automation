@@ -308,8 +308,8 @@ for email, info in merged.items():
         # -------------------------------
         # CREATE NEW LEAD IF MISSING
         # -------------------------------
-        print(f"➕ Creating new CRM lead for {email}", flush=True)
         if not crm_id:
+            print(f"➕ Creating new CRM lead for {email}", flush=True)
             created = crm.create_lead(payload)
             crm_id = created["id"]
             print(f"✅ Lead created with ID {crm_id}", flush=True)
