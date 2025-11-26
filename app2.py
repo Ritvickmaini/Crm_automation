@@ -295,7 +295,16 @@ def build_payload_from_row(row_dict, opp_type, multi, is_exhibitor):
         if isinstance(val, (int, float)):
             val = str(val)
         payload[crm_field] = val or ""
-
+    # ⭐ FIX: CRM mandatory lastname
+    
+    lname = payload.get("lastname", "").strip()
+    fname = payload.get("firstname", "").strip()
+    if not lname:
+        if fname:
+            payload["lastname"] = fname
+        else:
+            payload["lastname"] = "Unknown"
+    
     # phone = mobile
     mob = payload.get("mobile", "")
     if mob and not payload.get("phone"):
