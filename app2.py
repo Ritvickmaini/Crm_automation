@@ -5,15 +5,14 @@ import gspread
 from oauth2client.service_account import ServiceAccountCredentials
 import json
 from collections import defaultdict
-import os
 from dateutil.parser import parse
 from datetime import datetime
 
+# =========================
+# HELPERS
+# =========================
 def parse_sheet_date(value):
-    """
-    Convert any Google Sheet date into a clean Python datetime.
-    No auto-year fixing.
-    """
+    """Parse any date format from sheet including dd-mm, mm/dd, text formats."""
     if not value or not str(value).strip():
         return None
     try:
@@ -21,15 +20,15 @@ def parse_sheet_date(value):
     except:
         return None
 
-
 def to_crm_date(dt):
-    """Convert python datetime → CRM format YYYY-MM-DD"""
+    """Convert datetime to CRM format YYYY-MM-DD."""
     if not dt:
         return ""
     return dt.strftime("%Y-%m-%d")
 
+
 # =========================
-# CRM CLIENT CLASS
+# CRM CLIENT
 # =========================
 class CRMClient:
     def __init__(self, base_url, username, access_key):
@@ -43,24 +42,23 @@ class CRMClient:
         url = f"{self.base_url}?operation=getchallenge&username={self.username}"
         response = requests.get(url).json()
         if not response.get("success"):
-            raise Exception(f"Failed to get challenge token: {response}")
+            raise Exception("Failed to get challenge token")
         return response["result"]
 
     def _login(self):
-        challenge = self._get_challenge()
-        token = challenge["token"]
-        expire = challenge["expireTime"]
+        ch = self._get_challenge()
+        token = ch["token"]
+        expire = ch["expireTime"]
+
         self.session_expiry = expire if expire < 1e10 else expire / 1000
 
-        access_key_hash = hashlib.md5((token + self.access_key).encode()).hexdigest()
-        data = {
-            "operation": "login",
-            "username": self.username,
-            "accessKey": access_key_hash
-        }
+        key_hash = hashlib.md5((token + self.access_key).encode()).hexdigest()
+        data = {"operation": "login", "username": self.username, "accessKey": key_hash}
         response = requests.post(self.base_url, data=data).json()
+
         if not response.get("success"):
-            raise Exception(f"Login failed: {response}")
+            raise Exception("CRM login failed")
+
         self.session_name = response["result"]["sessionName"]
         return self.session_name
 
@@ -69,7 +67,7 @@ class CRMClient:
             self._login()
         return self.session_name
 
-    def create_lead(self, lead_data: dict):
+    def create_lead(self, lead_data):
         session = self.get_session()
         data = {
             "operation": "create",
@@ -78,46 +76,42 @@ class CRMClient:
             "element": json.dumps(lead_data)
         }
         response = requests.post(self.base_url, data=data).json()
+
         if not response.get("success"):
             raise Exception(f"Failed to create lead: {response}")
+
         return response["result"]
 
-    def get_lead(self, lead_id: str):
+    def get_lead(self, lead_id):
         session = self.get_session()
-        params = {
-            "operation": "retrieve",
-            "sessionName": session,
-            "id": lead_id
-        }
+        params = {"operation": "retrieve", "sessionName": session, "id": lead_id}
         response = requests.get(self.base_url, params=params).json()
+
         if not response.get("success"):
-            raise Exception(f"Failed to retrieve lead {lead_id}: {response}")
+            raise Exception(f"Failed retrieving lead {lead_id}")
+
         return response["result"]
 
     def get_all_comments(self, lead_id):
         session = self.get_session()
-        query = (
-            f"select commentcontent,createdtime "
-            f"from ModComments where related_to='{lead_id}' "
-            f"ORDER BY createdtime ASC;"
-        )
-        params = {
-            "operation": "query",
-            "sessionName": session,
-            "query": query
-        }
-        response = requests.get(self.base_url, params=params).json()
-        if not response.get("success"):
+        query = f"select commentcontent,createdtime from ModComments where related_to='{lead_id}' ORDER BY createdtime ASC;"
+        params = {"operation": "query", "sessionName": session, "query": query}
+        res = requests.get(self.base_url, params=params).json()
+
+        if not res.get("success"):
             return ""
-        result = response.get("result", [])
-        if not result:
+
+        rows = res.get("result", [])
+        if not rows:
             return ""
+
         formatted = []
-        for r in result:
-            comment = (r.get("commentcontent") or "").strip()
+        for r in rows:
+            com = (r.get("commentcontent") or "").strip()
             ts = r.get("createdtime", "").replace("T", " ")
-            if comment:
-                formatted.append(f"{ts} : {comment}")
+            if com:
+                formatted.append(f"{ts} : {com}")
+
         formatted.reverse()
         return "\n".join(formatted)
 
@@ -137,79 +131,16 @@ CRM_ID_COL_NAME = "CRM Lead ID"
 CRM_UPDATE_COL = "CRM Update"
 
 SERVICE_ACCOUNT_FILE = "/etc/secrets/service_account.json"
-scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
+
+scope = [
+    "https://spreadsheets.google.com/feeds",
+    "https://www.googleapis.com/auth/drive"
+]
 creds = ServiceAccountCredentials.from_json_keyfile_name(SERVICE_ACCOUNT_FILE, scope)
 client = gspread.authorize(creds)
 crm = CRMClient(BASE_URL, USERNAME, ACCESS_KEY)
+
 print("📄 Google Sheets authenticated", flush=True)
-
-
-# =========================
-# Mapping for CREATE ONLY
-# =========================
-def map_row_exhibitor(row, opp_type, multi):
-    lastname = row.get("Last Name") or row.get("First_Name") or "Unknown"
-    return {
-        "assigned_user_id": "19x77",
-        "leadstatus": "New",
-        "memberof": "11x232",
-        "cf_1203": "EXPO-SALES-MANAGEMENT",
-        "firstname": row.get("First_Name", ""),
-        "lastname": lastname,
-        "company": row.get("Company Name", ""),
-        "leadsource": row.get("Lead Source", ""),
-        "email": row.get("Email", ""),
-        "mobile": str(row.get("Mobile", "")),
-        "phone": str(row.get("Mobile", "")),
-        "cf_1161": row.get("Show", ""),
-        "cf_905": row.get("Next Followup", ""),
-        "cf_1047": row.get("Call Attempt", ""),
-        "cf_1171": row.get("Linkedin Msg", ""),
-        "cf_1155": row.get("Comments", ""),
-        "cf_1163": row.get("Pitch Deck URL", ""),  # <—
-        "cf_1049": opp_type,
-        "cf_1205": multi,
-        "cf_1175": row.get("WhatsApp msg count", ""),
-        "cf_1151": row.get("Follow-Up Count", ""),
-        "cf_1153": row.get("Last Follow-Up Date", ""),
-        "cf_1173": row.get("Reply Status", ""),
-        "cf_1177": row.get("LINKEDIN-HEADLINE", ""),
-        "cf_1179": row.get("LINKEDIN-REPLY", ""),
-        "cf_939": row.get("LINKEDIN-URL", ""),
-        "cf_1181": row.get("Stand Size", ""),
-        "cf_1183": row.get("Amount", ""),
-    }
-
-
-def map_row_speaker(row, opp_type, multi):
-    lastname = row.get("Last Name") or row.get("First_Name") or "Unknown"
-    return {
-        "assigned_user_id": "19x77",
-        "leadstatus": "New",
-        "memberof": "11x232",
-        "cf_1203": "EXPO-SALES-MANAGEMENT",
-        "firstname": row.get("First_Name", ""),
-        "lastname": lastname,
-        "company": row.get("Company Name", ""),
-        "leadsource": row.get("Lead Source", ""),
-        "email": row.get("Email", ""),
-        "mobile": str(row.get("Mobile", "")),
-        "phone": str(row.get("Mobile", "")),
-        "cf_1161": row.get("Show", ""),
-        "cf_905": row.get("Next Followup", ""),
-        "cf_1047": row.get("Call Attempt", ""),
-        "cf_1171": row.get("Linkedin Msg Count", ""),
-        "cf_1155": row.get("Comments", ""),
-        "cf_1163": row.get("Pitch Deck URL", ""),  # <—
-        "cf_1049": opp_type,
-        "cf_1205": multi,
-        "cf_1153": row.get("Email Sent-Date", ""),
-        "cf_1173": row.get("Reply Status", ""),
-        "cf_1175": row.get("WhatsApp msg count", ""),
-        "cf_1177": row.get("Company Linkedin Page", ""),
-        "cf_1179": row.get("Personal Linkedin Page", ""),
-        "cf_1215": row.get("Lead Date", ""),
-    }
 
 
 # =========================
@@ -223,14 +154,64 @@ def col_to_a1(col):
     return letters
 
 def header_to_index(header):
-    return {h: i+1 for i, h in enumerate(header)}
+    return {h: i + 1 for i, h in enumerate(header)}
 
 def row_to_dict(header, row):
     return {header[i]: row[i] if i < len(row) else "" for i in range(len(header))}
 
+def ensure_col(ws, hmap, header, col_name):
+    if col_name in hmap:
+        return hmap[col_name]
+    col = len(header) + 1
+    ws.update(f"{col_to_a1(col)}1", col_name)
+    return col
+
 
 # =========================
-# LOAD SHEETS + ENSURE COLUMNS
+# CENTRAL FIELD MAPPING
+# =========================
+SHEET_TO_CRM = {
+    "First_Name": "firstname",
+    "Last Name": "lastname",
+    "Company Name": "company",
+    "Lead Source": "leadsource",
+    "Email": "email",
+    "Mobile": "mobile",
+    "Show": "cf_1161",
+    "Next Followup": "cf_905",
+    "Call Attempt": "cf_1047",
+    "Linkedin Msg": "cf_1159",
+    "Comments": "cf_1155",
+    "Pitch Deck URL": "cf_1163",
+    "Reply Status": "cf_1173",
+    "WhatsApp msg count": "cf_1175",
+    "Follow-Up Count": "cf_1151",
+    "LINKEDIN-HEADLINE": "cf_1177",
+    "LINKEDIN-REPLY": "cf_1179",
+    "LINKEDIN-URL": "cf_939",
+    "Stand Size": "cf_1181",
+    "Amount": "cf_1183",
+    "Company Linkedin Page": "cf_941",
+    "Personal Linkedin Page": "",
+    "Lead Date": "cf_1149",
+    "Email-Count":"cf_1207",
+    "WhatsApp msg count":"cf_1157",
+}
+
+
+# =========================
+# STATIC DEFAULT CRM FIELDS
+# =========================
+STATIC_CRM_FIELDS = {
+    "assigned_user_id": "19x77",
+    "leadstatus": "New",
+    "memberof": "11x232",
+    "cf_1203": "EXPO-SALES-MANAGEMENT"
+}
+
+
+# =========================
+# LOAD SHEETS
 # =========================
 ws_ex = client.open(SHEET_NAME).worksheet(EXHIBITOR_TAB)
 ws_sp = client.open(SHEET_NAME).worksheet(SPEAKER_TAB)
@@ -244,293 +225,319 @@ sp_header = sp_vals[0]
 ex_hmap = header_to_index(ex_header)
 sp_hmap = header_to_index(sp_header)
 
-
-def ensure_col(ws, hmap, header, col_name):
-    if col_name in hmap:
-        return hmap[col_name]
-    col = len(header) + 1
-    ws.update(f"{col_to_a1(col)}1", col_name)
-    return col
-
-
 ex_crm_col = ensure_col(ws_ex, ex_hmap, ex_header, CRM_ID_COL_NAME)
 sp_crm_col = ensure_col(ws_sp, sp_hmap, sp_header, CRM_ID_COL_NAME)
-
 ex_update_col = ensure_col(ws_ex, ex_hmap, ex_header, CRM_UPDATE_COL)
 sp_update_col = ensure_col(ws_sp, sp_hmap, sp_header, CRM_UPDATE_COL)
 
+# re-fetch after ensure_col to pick up new headers if any
+ex_vals = ws_ex.get_all_values()
+sp_vals = ws_sp.get_all_values()
+ex_header = ex_vals[0]
+sp_header = sp_vals[0]
+ex_hmap = header_to_index(ex_header)
+sp_hmap = header_to_index(sp_header)
+
 
 # =========================
-# MERGE BY EMAIL
+# CONDITIONAL PAYLOAD BUILDER
 # =========================
-merged = {}
+def build_payload_from_row(row_dict, opp_type, multi, is_exhibitor):
+    payload = {}
+    payload.update(STATIC_CRM_FIELDS)
 
-for i, row in enumerate(ex_vals[1:], start=2):
-    d = row_to_dict(ex_header, row)
-    email = (d.get("Email") or "").strip().lower()
-    if email:
+    # Normal fields
+    for sheet_col, crm_field in SHEET_TO_CRM.items():
+        val = row_dict.get(sheet_col, "")
+        if isinstance(val, (int, float)):
+            val = str(val)
+        payload[crm_field] = val or ""
+
+    # phone = mobile
+    mob = payload.get("mobile", "")
+    if mob and not payload.get("phone"):
+        payload["phone"] = mob
+
+    # Conditional mapping for cf_1153
+    if is_exhibitor:
+        lf_raw = row_dict.get("Last Follow-Up Date", "")
+        lf_dt = parse_sheet_date(lf_raw)
+        if lf_dt:
+            payload["cf_1153"] = to_crm_date(lf_dt)
+    else:
+        es_raw = row_dict.get("Email Sent-Date", "")
+        es_dt = parse_sheet_date(es_raw)
+        if es_dt:
+            payload["cf_1153"] = to_crm_date(es_dt)
+
+    # Next Followup (same for all)
+    nf_raw = row_dict.get("Next Followup", "")
+    nf_dt = parse_sheet_date(nf_raw)
+    if nf_dt:
+        payload["cf_905"] = to_crm_date(nf_dt)
+
+    payload["cf_1049"] = opp_type
+    payload["cf_1205"] = multi
+
+    return payload
+
+
+# =========================
+# FLOW 1 – CREATE LEADS
+# =========================
+def flow1_create_and_sync_duplicates():
+    updates = defaultdict(list)
+    emap = {}
+
+    # EXHIBITOR
+    for i, row in enumerate(ex_vals[1:], start=2):
+        d = row_to_dict(ex_header, row)
+        email = (d.get("Email") or "").strip().lower()
+        if not email:
+            continue
+        ex_crm_id = row[ex_crm_col - 1] if ex_crm_col - 1 < len(row) else ""
+        emap.setdefault(email, {"ex": None, "sp": None})
+        emap[email]["ex"] = {"row": i, "data": d, "crm": ex_crm_id.strip()}
+
+    # SPEAKER
+    for i, row in enumerate(sp_vals[1:], start=2):
+        d = row_to_dict(sp_header, row)
+        email = (d.get("Email") or "").strip().lower()
+        if not email:
+            continue
+        sp_crm_id = row[sp_crm_col - 1] if sp_crm_col - 1 < len(row) else ""
+        emap.setdefault(email, {"ex": None, "sp": None})
+        emap[email]["sp"] = {"row": i, "data": d, "crm": sp_crm_id.strip()}
+
+    # PROCESS
+    for email, block in emap.items():
+        ex = block.get("ex")
+        sp = block.get("sp")
+
+        ex_id = ex["crm"] if ex else ""
+        sp_id = sp["crm"] if sp else ""
+
+        # Normalize
+        ex_id = ex_id.strip() if ex_id else ""
+        sp_id = sp_id.strip() if sp_id else ""
+
+        # Determine primary / secondary
+        primary = None
+        secondary = None
+        primary_ws = None
+        secondary_ws = None
+        primary_row = None
+        secondary_row = None
+        primary_is_ex = False
+
+        # Case: exists in both sheets
+        if ex and sp:
+            # If either side already has CRM id, that side is primary
+            if ex_id:
+                primary = ex
+                primary_id = ex_id
+                primary_ws = ws_ex
+                primary_row = ex["row"]
+                secondary = sp
+                secondary_ws = ws_sp
+                secondary_row = sp["row"]
+                primary_is_ex = True
+            elif sp_id:
+                primary = sp
+                primary_id = sp_id
+                primary_ws = ws_sp
+                primary_row = sp["row"]
+                secondary = ex
+                secondary_ws = ws_ex
+                secondary_row = ex["row"]
+                primary_is_ex = False
+            else:
+                # Neither has CRM id → exhibitor is primary
+                primary = ex
+                primary_id = ""
+                primary_ws = ws_ex
+                primary_row = ex["row"]
+                secondary = sp
+                secondary_ws = ws_sp
+                secondary_row = sp["row"]
+                primary_is_ex = True
+
+        # Only exhibitor
+        elif ex:
+            primary = ex
+            primary_id = ex_id
+            primary_ws = ws_ex
+            primary_row = ex["row"]
+            secondary = None
+            primary_is_ex = True
+
+        # Only speaker
+        else:
+            primary = sp
+            primary_id = sp_id
+            primary_ws = ws_sp
+            primary_row = sp["row"]
+            secondary = None
+            primary_is_ex = False
+
+        # If primary already has CRM id
+        if primary_id:
+            # Copy to secondary if it exists and doesn't have an id
+            if secondary:
+                sec_id = secondary["crm"].strip() if secondary.get("crm") else ""
+                if not sec_id:
+                    updates[secondary_ws].append({
+                        "range": f"{col_to_a1(sp_crm_col if secondary_ws==ws_sp else ex_crm_col)}{secondary_row}",
+                        "values": [[primary_id]]
+                    })
+                    updates[secondary_ws].append({
+                        "range": f"{col_to_a1(sp_update_col if secondary_ws==ws_sp else ex_update_col)}{secondary_row}",
+                        "values": [["DUPLICATE – CRM ID COPIED"]]
+                    })
+            # Nothing more to do for this email
+            continue
+
+        # Primary has no CRM id → create lead
+        try:
+            print(f"➕ Creating CRM lead for {email}")
+
+            pdata = build_payload_from_row(
+                primary["data"],
+                "Exhibitor/Speaker" if (ex and sp) else (
+                    "Exhibitor_opportunity" if ex else "speaker_opportunity"
+                ),
+                "Exhibitor,Speaker" if (ex and sp) else ("Exhibitor" if ex else "Speaker"),
+                True if primary_is_ex else False
+            )
+
+            res = crm.create_lead(pdata)
+            new_id = res["id"]
+            print(f"✅ Created lead {new_id}")
+
+            # Update primary row -> ADDED IN CRM
+            updates[primary_ws].append({
+                "range": f"{col_to_a1(ex_crm_col if primary_ws==ws_ex else sp_crm_col)}{primary_row}",
+                "values": [[new_id]]
+            })
+            updates[primary_ws].append({
+                "range": f"{col_to_a1(ex_update_col if primary_ws==ws_ex else sp_update_col)}{primary_row}",
+                "values": [["ADDED IN CRM"]]
+            })
+
+            # If secondary exists -> copy ID and mark ADDED IN CRM
+            if secondary:
+                updates[secondary_ws].append({
+                    "range": f"{col_to_a1(sp_crm_col if secondary_ws==ws_sp else ex_crm_col)}{secondary_row}",
+                    "values": [[new_id]]
+                })
+                updates[secondary_ws].append({
+                    "range": f"{col_to_a1(sp_update_col if secondary_ws==ws_sp else ex_update_col)}{secondary_row}",
+                    "values": [["ADDED IN CRM"]]
+                })
+
+        except Exception as e:
+            print(f"❌ Failed to create lead for {email}: {e}")
+
+    # APPLY UPDATES
+    for ws, batch in updates.items():
+        if batch:
+            ws.batch_update(batch)
+
+    print("🌱 FLOW 1 COMPLETE")
+
+
+# =========================
+# FLOW 2 – CRM → SHEET
+# =========================
+def flow2_sync_crm_to_sheet():
+    updates = defaultdict(list)
+    crm_rows = []
+
+    # Build CRM row list
+    for i, row in enumerate(ex_vals[1:], start=2):
         crm_id = row[ex_crm_col - 1] if ex_crm_col - 1 < len(row) else ""
-        merged[email] = {"status": "exhibitor", "ex": d, "ex_idx": i, "ex_crm": crm_id,
-                          "sp": None, "sp_idx": None, "sp_crm": None}
+        if crm_id:
+            email = row[ex_hmap["Email"] - 1].lower()
+            crm_rows.append(("ex", crm_id.strip(), email, i))
 
-for i, row in enumerate(sp_vals[1:], start=2):
-    d = row_to_dict(sp_header, row)
-    email = (d.get("Email") or "").strip().lower()
-    if email:
+    for i, row in enumerate(sp_vals[1:], start=2):
         crm_id = row[sp_crm_col - 1] if sp_crm_col - 1 < len(row) else ""
-        if email in merged:
-            merged[email]["status"] = "both"
-            merged[email]["sp"] = d
-            merged[email]["sp_idx"] = i
-            merged[email]["sp_crm"] = crm_id
-        else:
-            merged[email] = {"status": "speaker", "ex": None, "ex_idx": None, "ex_crm": None,
-                              "sp": d, "sp_idx": i, "sp_crm": crm_id}
+        if crm_id:
+            email = row[sp_hmap["Email"] - 1].lower()
+            crm_rows.append(("sp", crm_id.strip(), email, i))
 
+    for sheet_type, crm_id, email, row_num in crm_rows:
+        try:
+            # Prepare workspace references
+            ws = ws_ex if sheet_type == "ex" else ws_sp
+            hmap = ex_hmap if sheet_type == "ex" else sp_hmap
+            row_vals = ex_vals[row_num - 1] if sheet_type == "ex" else sp_vals[row_num - 1]
+            row_data = row_to_dict(ex_header if sheet_type == "ex" else sp_header, row_vals)
 
-# =========================
-# BATCH UPDATES
-# =========================
-updates = defaultdict(list)
+            # Skip syncing for duplicate-marked rows
+            crm_update_idx = hmap.get(CRM_UPDATE_COL)
+            if crm_update_idx:
+                crm_update_val = row_vals[crm_update_idx - 1] if crm_update_idx - 1 < len(row_vals) else ""
+                if crm_update_val and "DUPLICATE" in str(crm_update_val).upper():
+                    # don't overwrite duplicate rows
+                    continue
 
+            crm_data = crm.get_lead(crm_id)
+            comments = crm.get_all_comments(crm_id)
 
-def queue(ws, row, col, val):
-    updates[ws].append({"range": f"{col_to_a1(col)}{row}", "values": [[val]]})
+            # Correct date column
+            sheet_date_col = "Last Follow-Up Date" if sheet_type == "ex" else "Email Sent-Date"
 
+            sheet_raw = row_data.get(sheet_date_col, "")
+            crm_raw = crm_data.get("cf_1153", "")
 
-# =========================
-# PROCESS SYNC
-# =========================
-for email, info in merged.items():
-    try:
-        status = info["status"]
+            sdt = parse_sheet_date(sheet_raw)
+            cdt = parse_sheet_date(crm_raw)
 
-        # Determine source row for CRM creation
-        if status == "exhibitor":
-            src = info["ex"]
-            ex_idx = info["ex_idx"]
-            sp_idx = None
-            payload = map_row_exhibitor(src, "Exhibitor_opportunity", "Exhibitor")
-
-        elif status == "speaker":
-            src = info["sp"]
-            sp_idx = info["sp_idx"]
-            ex_idx = None
-            payload = map_row_speaker(src, "speaker_opportunity", "Speaker")
-
-        else:
-            src = info["ex"]
-            ex_idx = info["ex_idx"]
-            sp_idx = info["sp_idx"]
-            payload = map_row_exhibitor(src, "Exhibitor/Speaker", "Exhibitor,Speaker")
-
-        crm_id = info.get("ex_crm") or info.get("sp_crm")
-
-        # -------------------------------
-        # CREATE NEW LEAD IF MISSING
-        # -------------------------------
-        if not crm_id:
-            print(f"➕ Creating new CRM lead for {email}", flush=True)
-            created = crm.create_lead(payload)
-            crm_id = created["id"]
-            print(f"✅ Lead created with ID {crm_id}", flush=True)
-
-            if ex_idx:
-                queue(ws_ex, ex_idx, ex_crm_col, crm_id)
-                queue(ws_ex, ex_idx, ex_update_col, "ADDED IN CRM")
-            if sp_idx:
-                queue(ws_sp, sp_idx, sp_crm_col, crm_id)
-                queue(ws_sp, sp_idx, sp_update_col, "ADDED IN CRM")
-
-        # -------------------------------
-        # FETCH CRM DATA
-        # -------------------------------
-        crm_data = crm.get_lead(crm_id)
-        comments = crm.get_all_comments(crm_id)
-
-        # ----------------------------------------
-        # TWO-WAY SYNC FOR NEXT FOLLOWUP DATE (cf_905)
-        # ----------------------------------------
-        sheet_date_raw = (src.get("Next Followup") or "").strip()
-        crm_date_raw = (crm_data.get("cf_905") or "").strip()
-
-        sheet_date = parse_sheet_date(sheet_date_raw)
-        crm_date = parse_sheet_date(crm_date_raw)
-
-        # CASE 1: CRM missing date → update CRM from sheet
-        if crm_date is None and sheet_date is not None:
-            print(f"🟦 Updating CRM Next Followup for {email} → {sheet_date_raw}")
-            session = crm.get_session()
-
-            full_payload = crm_data.copy()
-            full_payload["id"] = crm_id
-            full_payload["cf_905"] = to_crm_date(sheet_date)
-            
-            for key in ["modifiedtime", "createdtime"]:
-                full_payload.pop(key, None)
-
-            requests.post(
-                crm.base_url,
-                data={
+            # Sheet newer → update CRM
+            if sdt and (cdt is None or cdt < sdt):
+                session = crm.get_session()
+                full = crm_data.copy()
+                full["id"] = crm_id
+                full["cf_1153"] = to_crm_date(sdt)
+                for k in ["createdtime", "modifiedtime"]:
+                    full.pop(k, None)
+                requests.post(crm.base_url, data={
                     "operation": "update",
                     "sessionName": session,
-                    "elementType": "Leads",
-                    "element": json.dumps(full_payload)
-                }
-            )
+                    "element": json.dumps(full)
+                })
 
-        # CASE 2: CRM date older → update CRM
-        elif crm_date and sheet_date and crm_date < sheet_date:
-            print(f"⬆️ CRM date older, updating CRM for {email} → {sheet_date_raw}")
-            session = crm.get_session()
+            # CRM newer → update sheet
+            elif cdt and (sdt is None or cdt > sdt):
+                if sheet_date_col in hmap:
+                    updates[ws].append({
+                        "range": f"{col_to_a1(hmap[sheet_date_col])}{row_num}",
+                        "values": [[crm_raw]]
+                    })
 
-            full_payload = crm_data.copy()
-            full_payload["id"] = crm_id
-            full_payload["cf_905"] = to_crm_date(sheet_date)
+            # Comments → Sheet
+            if comments and comments.strip() and "Comments" in hmap:
+                updates[ws].append({
+                    "range": f"{col_to_a1(hmap['Comments'])}{row_num}",
+                    "values": [[comments]]
+                })
 
-            for key in ["modifiedtime", "createdtime"]:
-                full_payload.pop(key, None)
+        except Exception as e:
+            print(f"❌ Error syncing {email} ({crm_id}): {e}")
 
-            requests.post(
-                crm.base_url,
-                data={
-                    "operation": "update",
-                    "sessionName": session,
-                    "elementType": "Leads",
-                    "element": json.dumps(full_payload)
-                }
-            )
+    for ws, batch in updates.items():
+        if batch:
+            ws.batch_update(batch)
 
-        # CASE 3: CRM date newer → update sheet
-        elif crm_date and sheet_date and crm_date > sheet_date:
-            print(f"⬇️ CRM has newer date, updating Sheet for {email} → {crm_date_raw}")
+    print("📝 FLOW 2 COMPLETE")
 
-            if ex_idx:
-                queue(ws_ex, ex_idx, ex_hmap["Next Followup"], crm_date_raw)
-            if sp_idx:
-                queue(ws_sp, sp_idx, sp_hmap["Next Followup"], crm_date_raw)
-
-        # ----------------------------------------
-        # CRM → SHEET (email, linkedin, whatsapp, call)
-        # ----------------------------------------
-        email_count = crm_data.get("cf_1207", "")
-        linkedin_val = crm_data.get("cf_1159", "")
-        whatsapp_val = crm_data.get("cf_1157", "")
-        call_val = crm_data.get("cf_1047", "")
-
-        # ----------------------------------------
-        # SYNC REPLY STATUS (Sheet → CRM)
-        # ----------------------------------------
-        sheet_reply = (src.get("Reply Status") or "").strip()
-        crm_reply = (crm_data.get("cf_1173") or "").strip()
-
-        if sheet_reply and sheet_reply != crm_reply:
-            try:
-                print(f"🔄 Updating Reply Status for {email}: {sheet_reply}", flush=True)
-                session = crm.get_session()
-
-                full_payload = crm_data.copy()
-                full_payload["id"] = crm_id
-                full_payload["cf_1173"] = sheet_reply
-
-                for key in ["modifiedtime", "createdtime"]:
-                    full_payload.pop(key, None)
-
-                update_res = requests.post(
-                    crm.base_url,
-                    data={
-                        "operation": "update",
-                        "sessionName": session,
-                        "element": json.dumps(full_payload)
-                    }
-                ).json()
-
-                if update_res.get("success"):
-                    print(f"✅ Reply Status updated for {email}: {sheet_reply}", flush=True)
-                else:
-                    print(f"❌ Failed to update Reply Status for {email}: {update_res}", flush=True)
-
-            except Exception as e:
-                print(f"❌ Error syncing Reply Status for {email}: {e}", flush=True)
-
-        # ----------------------------------------
-        # SYNC PITCH DECK URL (Sheet → CRM)
-        # ----------------------------------------
-        sheet_pitch = (src.get("Pitch Deck URL") or "").strip()
-        crm_pitch = (crm_data.get("cf_1163") or "").strip()
-
-        if sheet_pitch and sheet_pitch != crm_pitch:
-            try:
-                print(f"🔄 Updating Pitch Deck URL for {email}: {sheet_pitch}", flush=True)
-                session = crm.get_session()
-
-                full_payload = crm_data.copy()
-                full_payload["id"] = crm_id
-                full_payload["cf_1163"] = sheet_pitch
-
-                for key in ["modifiedtime", "createdtime"]:
-                    full_payload.pop(key, None)
-
-                update_res = requests.post(
-                    crm.base_url,
-                    data={
-                        "operation": "update",
-                        "sessionName": session,
-                        "element": json.dumps(full_payload)
-                    }
-                ).json()
-
-                if update_res.get("success"):
-                    print(f"✅ Pitch Deck URL updated for {email}: {sheet_pitch}", flush=True)
-                else:
-                    print(f"❌ Failed to update Pitch Deck URL for {email}: {update_res}", flush=True)
-
-            except Exception as e:
-                print(f"❌ Error syncing Pitch Deck URL for {email}: {e}", flush=True)
-
-        # ----------------------------------------
-        # UPDATE EXHIBITOR SHEET
-        # ----------------------------------------
-        if ex_idx:
-            r = ex_idx
-            if comments.strip():
-                queue(ws_ex, r, ex_hmap["Comments"], comments)
-            if "Email-Count" in ex_hmap:
-                queue(ws_ex, r, ex_hmap["Email-Count"], email_count)
-            if "Linkedin Msg" in ex_hmap:
-                queue(ws_ex, r, ex_hmap["Linkedin Msg"], linkedin_val)
-            if "WhatsApp msg count" in ex_hmap:
-                queue(ws_ex, r, ex_hmap["WhatsApp msg count"], whatsapp_val)
-            if "Call Attempt" in ex_hmap:
-                queue(ws_ex, r, ex_hmap["Call Attempt"], call_val)
-            queue(ws_ex, r, ex_crm_col, crm_id)
-
-        # ----------------------------------------
-        # UPDATE SPEAKER SHEET
-        # ----------------------------------------
-        if sp_idx:
-            r = sp_idx
-            if comments.strip():
-                queue(ws_sp, r, sp_hmap["Comments"], comments)
-            if "Email-Count" in sp_hmap:
-                queue(ws_sp, r, sp_hmap["Email-Count"], email_count)
-            if "Linkedin Msg Count" in sp_hmap:
-                queue(ws_sp, r, sp_hmap["Linkedin Msg Count"], linkedin_val)
-            if "WhatsApp msg count" in sp_hmap:
-                queue(ws_sp, r, sp_hmap["WhatsApp msg count"], whatsapp_val)
-            if "Call Attempt" in sp_hmap:
-                queue(ws_sp, r, sp_hmap["Call Attempt"], call_val)
-            queue(ws_sp, r, sp_crm_col, crm_id)
-
-    except Exception as e:
-        print("❌ ERROR for", email, ":", e, flush=True)
 
 # =========================
-# EXECUTE BATCH UPDATES
+# RUN SCRIPT
 # =========================
-for ws, batch in updates.items():
-    if batch:
-        ws.batch_update(batch)
-        print(f"Updated {len(batch)} cells in {ws.title}",flush=True)
-
-print("SYNC COMPLETE....", flush=True)
+if __name__ == "__main__":
+    print("🚀 Starting SYNC...")
+    flow1_create_and_sync_duplicates()
+    flow2_sync_crm_to_sheet()
+    print("✅ SYNC COMPLETE.")
