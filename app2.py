@@ -227,7 +227,6 @@ SHEET_TO_CRM = {
     "Comments": "cf_1155",
     "Pitch Deck URL": "cf_1163",
     "Reply Status": "cf_1173",
-    "WhatsApp msg count": "cf_1175",
     "Follow-Up Count": "cf_1151",
     "LINKEDIN-HEADLINE": "cf_1177",
     "LINKEDIN-REPLY": "cf_1179",
@@ -235,7 +234,6 @@ SHEET_TO_CRM = {
     "Stand Size": "cf_1181",
     "Amount": "cf_1183",
     "Company Linkedin Page": "cf_941",
-    "Personal Linkedin Page": "",
     "Lead Date": "cf_1149",
     "Email-Count":"cf_1207",
     "WhatsApp msg count":"cf_1157",
@@ -488,7 +486,40 @@ def flow1_create_and_sync_duplicates():
                 })
 
         except Exception as e:
-            print(f"❌ Failed to create lead for {email}: {e}",flush=True)
+            err = str(e)
+
+            # ⭐ HANDLE CRM DUPLICATE ERROR
+            if "Duplicate(s) detected" in err or "duplicate" in err.lower():
+                print(f"⚠️ Duplicate detected in CRM for {email}, marking in sheet...", flush=True)
+
+                # Mark PRIMARY row
+                updates[primary_ws].append({
+                    "range": f"{col_to_a1(ex_update_col if primary_ws == ws_ex else sp_update_col)}{primary_row}",
+                    "values": [["Failed to add in CRM – Duplicate detected"]]
+                })
+
+                # Write BLOCKER CRM ID so script skips next time
+                updates[primary_ws].append({
+                    "range": f"{col_to_a1(ex_crm_col if primary_ws == ws_ex else sp_crm_col)}{primary_row}",
+                    "values": [["DUPLICATE"]]
+                })
+
+                # If secondary exists → mark that too
+                if secondary:
+                    updates[secondary_ws].append({
+                        "range": f"{col_to_a1(sp_update_col if secondary_ws == ws_sp else ex_update_col)}{secondary_row}",
+                        "values": [["Failed to add in CRM – Duplicate detected"]]
+                    })
+                    updates[secondary_ws].append({
+                        "range": f"{col_to_a1(sp_crm_col if secondary_ws == ws_sp else ex_crm_col)}{secondary_row}",
+                        "values": [["DUPLICATE"]]
+                    })
+
+                continue  # Skip this lead completely
+
+            # OTHER ERRORS
+            print(f"❌ Failed to create lead for {email}: {e}", flush=True)
+
 
     # APPLY UPDATES
     for ws, batch in updates.items():
