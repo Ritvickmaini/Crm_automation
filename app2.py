@@ -41,28 +41,36 @@ class CRMClient:
     def _get_challenge(self):
         url = f"{self.base_url}?operation=getchallenge&username={self.username}"
         response = requests.get(url).json()
+
         if not response.get("success"):
             raise Exception("Failed to get challenge token")
+
         return response["result"]
 
     def _login(self):
         ch = self._get_challenge()
         token = ch["token"]
-        expire = ch["expireTime"]
 
-        self.session_expiry = expire if expire < 1e10 else expire / 1000
+        # FIX 1 → ignore CRM timestamp completely
+        self.session_expiry = time.time() + 3600   # session valid 1 hour
 
         key_hash = hashlib.md5((token + self.access_key).encode()).hexdigest()
-        data = {"operation": "login", "username": self.username, "accessKey": key_hash}
+        data = {
+            "operation": "login",
+            "username": self.username,
+            "accessKey": key_hash
+        }
+
         response = requests.post(self.base_url, data=data).json()
 
         if not response.get("success"):
-            raise Exception("CRM login failed")
+            raise Exception("CRM login failed: " + str(response))
 
         self.session_name = response["result"]["sessionName"]
         return self.session_name
 
     def get_session(self):
+        # FIX 2 → refresh session if expired or None
         if not self.session_name or time.time() >= self.session_expiry:
             self._login()
         return self.session_name
@@ -77,35 +85,69 @@ class CRMClient:
         }
         response = requests.post(self.base_url, data=data).json()
 
+        # FIX 3 → retry once on invalid session
+        if not response.get("success") and "invalid" in str(response).lower():
+            session = self._login()
+            data["sessionName"] = session
+            response = requests.post(self.base_url, data=data).json()
+
         if not response.get("success"):
+            print("🔴 CRM ERROR (create_lead):", response, flush=True)
             raise Exception(f"Failed to create lead: {response}")
 
         return response["result"]
 
     def get_lead(self, lead_id):
         session = self.get_session()
-        params = {"operation": "retrieve", "sessionName": session, "id": lead_id}
+        params = {
+            "operation": "retrieve",
+            "sessionName": session,
+            "id": lead_id
+        }
+
         response = requests.get(self.base_url, params=params).json()
 
+        # FIX 4 → retry retrieve if CRM invalidates session
         if not response.get("success"):
-            raise Exception(f"Failed retrieving lead {lead_id}")
+            if "invalid" in str(response).lower() or "session" in str(response).lower():
+                session = self._login()
+                params["sessionName"] = session
+                response = requests.get(self.base_url, params=params).json()
+
+        if not response.get("success"):
+            print("🔴 CRM ERROR (get_lead):", response, flush=True)
+            raise Exception(f"Failed retrieving lead {lead_id}: {response}")
 
         return response["result"]
 
     def get_all_comments(self, lead_id):
         session = self.get_session()
-        query = f"select commentcontent,createdtime from ModComments where related_to='{lead_id}' ORDER BY createdtime ASC;"
-        params = {"operation": "query", "sessionName": session, "query": query}
+        query = (
+            f"select commentcontent,createdtime from ModComments "
+            f"where related_to='{lead_id}' ORDER BY createdtime ASC;"
+        )
+        params = {
+            "operation": "query",
+            "sessionName": session,
+            "query": query
+        }
+
         res = requests.get(self.base_url, params=params).json()
 
+        # FIX 5 → retry on invalid session
         if not res.get("success"):
+            if "invalid" in str(res).lower():
+                session = self._login()
+                params["sessionName"] = session
+                res = requests.get(self.base_url, params=params).json()
+
+        if not res.get("success"):
+            print("🔴 CRM ERROR (get_all_comments):", res, flush=True)
             return ""
 
         rows = res.get("result", [])
-        if not rows:
-            return ""
-
         formatted = []
+
         for r in rows:
             com = (r.get("commentcontent") or "").strip()
             ts = r.get("createdtime", "").replace("T", " ")
@@ -114,6 +156,7 @@ class CRMClient:
 
         formatted.reverse()
         return "\n".join(formatted)
+
 
 
 # =========================
