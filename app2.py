@@ -258,17 +258,6 @@ sp_crm_col = ensure_col(ws_sp, sp_hmap, sp_header, CRM_ID_COL_NAME)
 
 ex_update_col = ensure_col(ws_ex, ex_hmap, ex_header, CRM_UPDATE_COL)
 sp_update_col = ensure_col(ws_sp, sp_hmap, sp_header, CRM_UPDATE_COL)
-# =========================
-# RELOAD HEADERS AFTER ADDING COLUMNS
-# =========================
-ex_vals = ws_ex.get_all_values()
-sp_vals = ws_sp.get_all_values()
-
-ex_header = ex_vals[0]
-sp_header = sp_vals[0]
-
-ex_hmap = header_to_index(ex_header)
-sp_hmap = header_to_index(sp_header)
 
 
 # =========================
@@ -545,4 +534,3 @@ for ws, batch in updates.items():
         print(f"Updated {len(batch)} cells in {ws.title}",flush=True)
 
 print("SYNC COMPLETE....", flush=True)
-
