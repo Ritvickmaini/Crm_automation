@@ -399,7 +399,7 @@ def flow1_create_and_sync_duplicates():
 
         # Primary has no CRM id → create lead
         try:
-            print(f"➕ Creating CRM lead for {email}")
+            print(f"➕ Creating CRM lead for {email}",flush=True)
 
             pdata = build_payload_from_row(
                 primary["data"],
@@ -412,7 +412,7 @@ def flow1_create_and_sync_duplicates():
 
             res = crm.create_lead(pdata)
             new_id = res["id"]
-            print(f"✅ Created lead {new_id}")
+            print(f"✅ Created lead {new_id}",flush=True)
 
             # Update primary row -> ADDED IN CRM
             updates[primary_ws].append({
@@ -436,14 +436,14 @@ def flow1_create_and_sync_duplicates():
                 })
 
         except Exception as e:
-            print(f"❌ Failed to create lead for {email}: {e}")
+            print(f"❌ Failed to create lead for {email}: {e}",flush=True)
 
     # APPLY UPDATES
     for ws, batch in updates.items():
         if batch:
             ws.batch_update(batch)
 
-    print("🌱 FLOW 1 COMPLETE")
+    print("🌱 FLOW 1 COMPLETE",flush=True)
 
 
 # =========================
@@ -530,14 +530,14 @@ def flow2_sync_crm_to_sheet():
         if batch:
             ws.batch_update(batch)
 
-    print("📝 FLOW 2 COMPLETE")
+    print("📝 FLOW 2 COMPLETE",flush=True)
 
 
 # =========================
 # RUN SCRIPT
 # =========================
 if __name__ == "__main__":
-    print("🚀 Starting SYNC...")
+    print("🚀 Starting SYNC...",flush=True)
     flow1_create_and_sync_duplicates()
     flow2_sync_crm_to_sheet()
-    print("✅ SYNC COMPLETE.")
+    print("✅ SYNC COMPLETE.",flush=True)
