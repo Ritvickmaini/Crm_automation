@@ -562,15 +562,14 @@ def flow2_sync_crm_to_sheet():
             if crm_update_idx:
                 crm_update_val = row_vals[crm_update_idx - 1] if crm_update_idx - 1 < len(row_vals) else ""
                 if crm_update_val and "DUPLICATE" in str(crm_update_val).upper():
-                    # don't overwrite duplicate rows
                     continue
 
+            # Try retrieving CRM record
             crm_data = crm.get_lead(crm_id)
             comments = crm.get_all_comments(crm_id)
 
             # Correct date column
             sheet_date_col = "Last Follow-Up Date" if sheet_type == "ex" else "Email Sent-Date"
-
             sheet_raw = row_data.get(sheet_date_col, "")
             crm_raw = crm_data.get("cf_1153", "")
 
@@ -593,11 +592,10 @@ def flow2_sync_crm_to_sheet():
 
             # CRM newer → update sheet
             elif cdt and (sdt is None or cdt > sdt):
-                if sheet_date_col in hmap:
-                    updates[ws].append({
-                        "range": f"{col_to_a1(hmap[sheet_date_col])}{row_num}",
-                        "values": [[crm_raw]]
-                    })
+                updates[ws].append({
+                    "range": f"{col_to_a1(hmap[sheet_date_col])}{row_num}",
+                    "values": [[crm_raw]]
+                })
 
             # Comments → Sheet
             if comments and comments.strip() and "Comments" in hmap:
@@ -607,15 +605,41 @@ def flow2_sync_crm_to_sheet():
                 })
 
         except Exception as e:
+            err = str(e).lower()
             print(f"❌ Error syncing {email} ({crm_id}): {e}")
-            print(f"⚠️ CRM ID '{crm_id}' not found or invalid for email: {email}")
 
+            # Detect invalid CRM ID
+            is_invalid = (
+                "access_denied" in err
+                or "permission to perform the operation is denied" in err
+                or "does not exist" in err
+                or "record you are trying to access" in err
+                or "invalid" in err
+            )
+
+            if is_invalid:
+                print(f"🧹 Removing INVALID CRM ID '{crm_id}' for {email} — Flow-1 will recreate next run")
+
+                crm_id_col = ex_crm_col if sheet_type == "ex" else sp_crm_col
+                crm_update_col = ex_update_col if sheet_type == "ex" else sp_update_col
+
+                # Delete CRM Lead ID
+                ws.update(f"{col_to_a1(crm_id_col)}{row_num}", [[""]])
+
+                # Delete CRM Update
+                ws.update(f"{col_to_a1(crm_update_col)}{row_num}", [[""]])
+
+                # Do NOT recreate here → Flow 1 handles this
+                continue
+            else:
+                print(f"⚠️ Unknown CRM error for {email}, skipping...")
+
+    # Apply updates
     for ws, batch in updates.items():
         if batch:
             ws.batch_update(batch)
 
-    print("📝 FLOW 2 COMPLETE",flush=True)
-
+    print("📝 FLOW 2 COMPLETE", flush=True)
 
 # =========================
 # RUN SCRIPT
