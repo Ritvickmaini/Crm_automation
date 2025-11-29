@@ -538,13 +538,13 @@ def flow2_sync_crm_to_sheet():
 
     # Build CRM row list
     for i, row in enumerate(ex_vals[1:], start=2):
-        crm_id = row[ex_crm_col - 1] if ex_crm_col - 1 < len(row) else ""
+        crm_id = (row[ex_crm_col - 1] if ex_crm_col - 1 < len(row) else "").strip()
         if crm_id:
             email = row[ex_hmap["Email"] - 1].lower()
             crm_rows.append(("ex", crm_id.strip(), email, i))
 
     for i, row in enumerate(sp_vals[1:], start=2):
-        crm_id = row[sp_crm_col - 1] if sp_crm_col - 1 < len(row) else ""
+        crm_id = (row[sp_crm_col - 1] if sp_crm_col - 1 < len(row) else "").strip()
         if crm_id:
             email = row[sp_hmap["Email"] - 1].lower()
             crm_rows.append(("sp", crm_id.strip(), email, i))
@@ -608,6 +608,7 @@ def flow2_sync_crm_to_sheet():
 
         except Exception as e:
             print(f"❌ Error syncing {email} ({crm_id}): {e}")
+            print(f"⚠️ CRM ID '{crm_id}' not found or invalid for email: {email}")
 
     for ws, batch in updates.items():
         if batch:
@@ -622,5 +623,16 @@ def flow2_sync_crm_to_sheet():
 if __name__ == "__main__":
     print("🚀 Starting SYNC...",flush=True)
     flow1_create_and_sync_duplicates()
+    # REFRESH SHEET DATA BEFORE FLOW 2
+    global ex_vals, sp_vals, ex_header, sp_header, ex_hmap, sp_hmap
+    ex_vals = ws_ex.get_all_values()
+    sp_vals = ws_sp.get_all_values()
+
+    ex_header = ex_vals[0]
+    sp_header = sp_vals[0]
+    
+    ex_hmap = header_to_index(ex_header)
+    sp_hmap = header_to_index(sp_header)
+    
     flow2_sync_crm_to_sheet()
     print("✅ SYNC COMPLETE.",flush=True)
