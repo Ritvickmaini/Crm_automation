@@ -163,8 +163,8 @@ class CRMClient:
 # CONFIG
 # =========================
 BASE_URL = "https://b2bgrowthexpo.crm360degree.com"
-USERNAME = "ritvick"
-ACCESS_KEY = "906hMzSqrYlW6rq"
+USERNAME = "admin"
+ACCESS_KEY = "VTuOUDEyXX6AfJH3"
 
 SHEET_NAME = "Expo-Sales-Management"
 EXHIBITOR_TAB = "exhibitors-1"
