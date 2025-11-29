@@ -624,10 +624,17 @@ def flow2_sync_crm_to_sheet():
                 crm_update_col = ex_update_col if sheet_type == "ex" else sp_update_col
 
                 # Delete CRM Lead ID
-                ws.update(f"{col_to_a1(crm_id_col)}{row_num}", [[""]])
+                updates[ws].append({
+                    "range": f"{col_to_a1(crm_id_col)}{row_num}",
+                    "values": [[""]]
+                })
+                
 
                 # Delete CRM Update
-                ws.update(f"{col_to_a1(crm_update_col)}{row_num}", [[""]])
+                updates[ws].append({
+                    "range": f"{col_to_a1(crm_update_col)}{row_num}",
+                    "values": [[""]]
+                })
 
                 # Do NOT recreate here → Flow 1 handles this
                 continue
