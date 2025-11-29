@@ -624,7 +624,6 @@ if __name__ == "__main__":
     print("🚀 Starting SYNC...",flush=True)
     flow1_create_and_sync_duplicates()
     # REFRESH SHEET DATA BEFORE FLOW 2
-    global ex_vals, sp_vals, ex_header, sp_header, ex_hmap, sp_hmap
     ex_vals = ws_ex.get_all_values()
     sp_vals = ws_sp.get_all_values()
 
