@@ -581,7 +581,8 @@ def flow2_sync_crm_to_sheet():
                 session = crm.get_session()
                 full = crm_data.copy()
                 full["id"] = crm_id
-                full["cf_1153"] = to_crm_date(sdt)
+                crm_date = sdt.strftime("%d-%m-%Y")
+                full["cf_1153"] = crm_date
                 for k in ["createdtime", "modifiedtime"]:
                     full.pop(k, None)
                 requests.post(crm.base_url, data={
