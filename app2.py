@@ -575,15 +575,13 @@ def flow2_sync_crm_to_sheet():
 
             sdt = parse_sheet_date(sheet_raw)
             cdt = parse_sheet_date(crm_raw)
-            sheet_correct_format = sdt.strftime("%d-%m-%Y") if sdt else ""
 
             # Sheet newer → update CRM
-            if sdt and (cdt is None or cdt < sdt or crm_raw.strip() != sheet_correct_format):
+            if sdt and (cdt is None or cdt < sdt):
                 session = crm.get_session()
                 full = crm_data.copy()
                 full["id"] = crm_id
-                
-                full["cf_1153"] = sheet_correct_format
+                full["cf_1153"] = to_crm_date(sdt)
                 for k in ["createdtime", "modifiedtime"]:
                     full.pop(k, None)
                 requests.post(crm.base_url, data={
